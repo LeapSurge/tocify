@@ -12,7 +12,7 @@
   import {PDFService, type PDFState, type TocItem} from '../lib/pdf-service';
   import {setOutline} from '../lib/pdf-outliner';
   import {debounce} from '../lib';
-  import {buildTree, convertPdfJsOutlineToTocItems, setNestedValue, findActiveTocPath} from '$lib/utils';
+  import {buildTree, setNestedValue, findActiveTocPath} from '$lib/utils';
   import {readDraft, shouldShowGraphEntrance, writeFingerprint} from '$lib/page/local-persistence';
   import {buildTocAfterOffset} from '$lib/page/toc-offset';
   import {generateToc} from '$lib/toc-service';
@@ -535,24 +535,8 @@
         tocItems.set(items);
         updateTocField('pageOffset', pageOffset);
       } else {
-        try {
-          const existingOutline = await originalPdfInstance.getOutline();
-
-          if (existingOutline && existingOutline.length > 0) {
-            const importedItems = await convertPdfJsOutlineToTocItems(existingOutline, originalPdfInstance);
-            tocItems.set(importedItems);
-            updateTocField('pageOffset', 0);
-
-            toastProps = {show: true, message: 'The raw ToC has been imported from the PDF.', type: 'info'};
-          } else {
-            tocItems.set([]);
-            updateTocField('pageOffset', 0);
-          }
-        } catch (err: any) {
-          console.warn('PDF load outline error:', err);
-          tocItems.set([]);
-          updateTocField('pageOffset', 0);
-        }
+        tocItems.set([]);
+        updateTocField('pageOffset', 0);
       }
 
       lastPdfContentJson = JSON.stringify(getPdfEffectiveData($tocItems));
