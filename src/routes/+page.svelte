@@ -836,11 +836,6 @@
       if (!confirmed) return;
     }
 
-    if ($tocItems.length > 0) {
-      await goToStageTwo();
-      return;
-    }
-
     const ok = await generateTocFromAI();
     if (ok && !showOffsetModal) {
       await goToStageTwo();
