@@ -1,5 +1,6 @@
 import type * as PdfjsLibTypes from 'pdfjs-dist';
 import {get} from 'svelte/store';
+import { getFriendlyAiErrorMessage, parseJsonText } from './toc-response';
 
 import {pdfService} from '../stores';
 
@@ -78,37 +79,16 @@ export async function generateToc(
 
   if (!response.ok) {
     const raw = await response.text();
-    let err: any = {};
+    let errMessage = raw || 'AI processing failed.';
     try {
-      err = JSON.parse(raw);
+      errMessage = parseJsonText<{ message?: string }>(raw, '/api/process-toc')?.message || errMessage;
     } catch {
-      err = {message: raw || 'AI processing failed.'};
+      // Non-JSON payload should still map to a friendly message path.
     }
-    let friendlyMessage = err.message || 'AI processing failed.';
-
-    if (response.status >= 500 && response.status < 600) {
-      const p = provider || 'Unknown Provider';
-      const providerName = p.charAt(0).toUpperCase() + p.slice(1);
-      friendlyMessage = `${ providerName }: ${ friendlyMessage } You can try other model in API settings.`;
-    } else if (friendlyMessage.includes('No valid ToC') ||
-        friendlyMessage.includes('parsing error') ||
-        friendlyMessage.includes('structure')) {
-      friendlyMessage =
-          'The selected pages don\'t look like a ToC. Please try adjusting the page range.';
-    } else if (response.status === 413) {
-      friendlyMessage =
-          'Request too large. Please reduce the page range or lower the resolution.';
-    } else if (response.status === 429) {
-      friendlyMessage =
-          'Daily limit exceeded. Please try again tomorrow or download the client or deploy service with your own API key.';
-    }
+    const friendlyMessage = getFriendlyAiErrorMessage(response.status, errMessage, provider);
     throw new Error(friendlyMessage);
   }
 
   const raw = await response.text();
-  try {
-    return JSON.parse(raw);
-  } catch {
-    throw new Error(`Invalid JSON response from /api/process-toc: ${ raw.slice(0, 120) }`);
-  }
+  return parseJsonText(raw, '/api/process-toc');
 }

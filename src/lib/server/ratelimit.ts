@@ -1,6 +1,7 @@
 import { env } from '$env/dynamic/private';
 import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
+import { resolveRateLimitConfig } from './rate-limit-config';
 
 export const LIMIT_CONFIG = {
   MAX_REQUESTS_PER_DAY: 5,
@@ -8,10 +9,13 @@ export const LIMIT_CONFIG = {
   MAX_TEXT_SIZE_KB: 128
 };
 
-const redis = new Redis({
-  url: env.UPSTASH_REDIS_REST_URL,
-  token: env.UPSTASH_REDIS_REST_TOKEN,
-});
+const rateLimitConfig = resolveRateLimitConfig(env);
+const redis = rateLimitConfig.enabled ?
+  new Redis({
+    url: rateLimitConfig.url,
+    token: rateLimitConfig.token,
+  }) :
+  null;
 
 export function getClientIp(request: Request): string {
   const headers = request.headers;
@@ -29,6 +33,10 @@ export function getClientIp(request: Request): string {
  */
 export async function checkRateLimit(
   request: Request, limitCount: number, prefix: string): Promise<Response | null> {
+  if (!redis) {
+    return null;
+  }
+
   const clientIp = getClientIp(request);
 
   if (clientIp !== 'unknown') {
