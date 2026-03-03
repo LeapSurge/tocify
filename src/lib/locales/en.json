@@ -161,5 +161,33 @@
     "jump_to_page": "Jump to page {page}",
     "beta": "It's beta now, maybe beta forever",
     "hide_graph": "Hide Entry"
+  },
+  "wizard": {
+    "step1": "Preprocess",
+    "step2": "Edit ToC",
+    "step3": "Export",
+    "desc_1": "Step 1: Upload a file, finish preprocessing, and start generating ToC.",
+    "desc_2": "Step 2: Edit the ToC structure and confirm page jumps and hierarchy.",
+    "desc_3": "Step 3: Configure numbering/physical ToC page, preview, then export.",
+    "start": "Start",
+    "next": "Next",
+    "prev": "Back",
+    "reason_upload_first": "Please upload a PDF first",
+    "reason_toc_empty": "ToC is empty. Generate or add items first",
+    "api_dirty": "API settings have unsaved changes. Start will use current input values.",
+    "api_dirty_confirm": "API settings have unsaved changes. Continue with current input values?",
+    "toast_upload_first": "Please upload a PDF file first.",
+    "toast_toc_empty": "ToC is empty. Generate or add items first.",
+    "leave_confirm": "You have changes not exported yet. Continue switching steps?"
+  },
+  "editor": {
+    "tab_text": "Text",
+    "tab_tree": "Structure",
+    "ai_format": "AI Format",
+    "processing": "Processing..."
+  },
+  "progress": {
+    "done": "Done",
+    "current": "Current"
   }
 }

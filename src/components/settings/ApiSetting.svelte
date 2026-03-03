@@ -16,24 +16,38 @@
   };
 
   let isSaved = false;
+  let lastSavedSnapshot = JSON.stringify(config);
+
+  function emitConfigChange() {
+    dispatch('change', config);
+    const isDirty = JSON.stringify(config) !== lastSavedSnapshot;
+    dispatch('dirtyChange', isDirty);
+  }
 
   onMount(() => {
     const savedConfig = localStorage.getItem('tocify_api_config');
     if (savedConfig) {
       try {
         config = JSON.parse(savedConfig);
+        lastSavedSnapshot = JSON.stringify(config);
         dispatch('change', config);
+        dispatch('dirtyChange', false);
       } catch (e) {
         console.error('Failed to parse api config', e);
       }
+    } else {
+      dispatch('change', config);
+      dispatch('dirtyChange', false);
     }
   });
 
   function save() {
     localStorage.setItem('tocify_api_config', JSON.stringify(config));
     isSaved = true;
+    lastSavedSnapshot = JSON.stringify(config);
     dispatch('save', config);
     dispatch('change', config);
+    dispatch('dirtyChange', false);
 
     setTimeout(() => {
       isSaved = false;
@@ -88,7 +102,10 @@
             id="llm_provider"
             class="w-full bg-white outline-none text-sm"
             bind:value={config.provider}
-            on:change={() => (isSaved = false)}
+            on:change={() => {
+              isSaved = false;
+              emitConfigChange();
+            }}
           >
             <option value="">Auto</option>
             <option value="gemini">Gemini</option>
@@ -113,7 +130,10 @@
               class="w-full outline-none text-sm placeholder-gray-400"
               placeholder="ep-..."
               bind:value={config.doubaoEndpointIdText}
-              on:input={() => (isSaved = false)}
+              on:input={() => {
+                isSaved = false;
+                emitConfigChange();
+              }}
             />
           </div>
 
@@ -131,7 +151,10 @@
               class="w-full outline-none text-sm placeholder-gray-400"
               placeholder="ep-..."
               bind:value={config.doubaoEndpointIdVision}
-              on:input={() => (isSaved = false)}
+              on:input={() => {
+                isSaved = false;
+                emitConfigChange();
+              }}
             />
           </div>
         {/if}
@@ -152,7 +175,10 @@
             class="w-full outline-none placeholder-gray-400 placeholder:italic [&::placeholder]:text-xs "
             placeholder={$t('settings.api_key_placeholder')}
             bind:value={config.apiKey}
-            on:input={() => (isSaved = false)}
+            on:input={() => {
+              isSaved = false;
+              emitConfigChange();
+            }}
           />
         </div>
 

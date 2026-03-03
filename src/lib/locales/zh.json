@@ -169,5 +169,33 @@
     "jump_to_page": "跳转到第 {page} 页",
     "beta": "现在是 beta，或许永远是 beta",
     "hide_graph": "隐藏入口"
+  },
+  "wizard": {
+    "step1": "预处理",
+    "step2": "编辑目录",
+    "step3": "导出",
+    "desc_1": "第 1 步：上传文件并完成预处理设置，然后开始生成目录。",
+    "desc_2": "第 2 步：编辑目录结构，确认跳转页码和层级关系。",
+    "desc_3": "第 3 步：设置编号与实体目录页，预览后导出。",
+    "start": "开始生成",
+    "next": "下一步",
+    "prev": "上一步",
+    "reason_upload_first": "请先上传 PDF 文件",
+    "reason_toc_empty": "目录为空，请先生成或手动添加目录项",
+    "api_dirty": "API 设置有未保存改动。开始时会使用当前输入值。",
+    "api_dirty_confirm": "API 设置有未保存改动，是否使用当前输入值继续？",
+    "toast_upload_first": "请先上传 PDF 文件。",
+    "toast_toc_empty": "目录为空，请先生成或手动添加目录项。",
+    "leave_confirm": "当前有未导出的修改，确定要切换步骤吗？"
+  },
+  "editor": {
+    "tab_text": "文本编辑",
+    "tab_tree": "结构编辑",
+    "ai_format": "AI 格式化",
+    "processing": "处理中..."
+  },
+  "progress": {
+    "done": "已完成",
+    "current": "当前"
   }
 }

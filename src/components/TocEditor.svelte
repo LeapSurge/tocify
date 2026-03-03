@@ -81,6 +81,7 @@
 
   let isDragging = false;
   let textGenTimer;
+  let editorMode: 'text' | 'tree' = 'tree';
 
   const unsubscribe = tocItems.subscribe((value) => {
     if (isUpdatingFromEditor) return;
@@ -146,29 +147,32 @@
     }
 
     isProcessing = true;
-    const response = await fetch('/api/process-toc', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        text: text,
-        apiKey: apiConfig.apiKey,
-        provider: apiConfig.provider,
-      }),
-    });
+    try {
+      const response = await fetch('/api/process-toc', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          text: text,
+          apiKey: apiConfig.apiKey,
+          provider: apiConfig.provider,
+        }),
+      });
 
-    if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      throw new Error(errData.message || 'AI processing failed');
-    }
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'AI processing failed');
+      }
 
-    const aiResult = await response.json();
-    isProcessing = false;
+      const aiResult = await response.json();
 
-    if (Array.isArray(aiResult) && aiResult.length > 0) {
-      saveHistory();
-      $tocItems = buildTree(aiResult);
-    } else {
-      throw new Error('AI could not parse any ToC structure.');
+      if (Array.isArray(aiResult) && aiResult.length > 0) {
+        saveHistory();
+        $tocItems = buildTree(aiResult);
+      } else {
+        throw new Error('AI could not parse any ToC structure.');
+      }
+    } finally {
+      isProcessing = false;
     }
   }
 
@@ -351,99 +355,120 @@
 />
 
 <div class="flex flex-col gap-4 mt-3">
-  <div class="h-48 relative group">
-    <textarea
-      bind:value={text}
-      on:input={handleInput}
-      class="w-full h-full border-2 border-black rounded-lg p-2 text-sm myfocus leading-6 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none pr-10"
-    ></textarea>
+  <div class="grid grid-cols-2 gap-2">
+    <button
+      class="border-2 border-black rounded-md py-1 text-sm font-bold transition-colors"
+      class:bg-blue-300={editorMode === 'text'}
+      class:bg-white={editorMode !== 'text'}
+      on:click={() => (editorMode = 'text')}
+    >
+      {$t('editor.tab_text')}
+    </button>
+    <button
+      class="border-2 border-black rounded-md py-1 text-sm font-bold transition-colors"
+      class:bg-blue-300={editorMode === 'tree'}
+      class:bg-white={editorMode !== 'tree'}
+      on:click={() => (editorMode = 'tree')}
+    >
+      {$t('editor.tab_tree')}
+    </button>
+  </div>
 
-    {#if hasInvalidLines}
-      <div class="absolute bottom-3 right-3">
-        <Tooltip
-          isTextCopiable
-          width="md:w-[350px] w-[250px]"
-          text={promptTooltipText}
-          position={innerWidth < 1024 ? '-200 -500' : '100 -600'}
-        >
-          <button
-            on:click={handleAiFormat}
-            disabled={isProcessing || !text.trim()}
-            class="flex items-center gap-1.5 bg-gradient-to-br from-blue-300 to-pink-600 text-white px-3 py-1.5 rounded-md shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
+  {#if editorMode === 'text'}
+    <div class="h-48 relative group">
+      <textarea
+        bind:value={text}
+        on:input={handleInput}
+        class="w-full h-full border-2 border-black rounded-lg p-2 text-sm myfocus leading-6 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none pr-10"
+      ></textarea>
+
+      {#if hasInvalidLines}
+        <div class="absolute bottom-3 right-3">
+          <Tooltip
+            isTextCopiable
+            width="md:w-[350px] w-[250px]"
+            text={promptTooltipText}
+            position={innerWidth < 1024 ? '-200 -500' : '100 -600'}
           >
-            {#if isProcessing}
-              <Loader2
-                size={16}
-                class="animate-spin"
-              />
-              <span class="text-xs font-bold">Processing...</span>
-            {:else}
-              <Sparkles size={16} />
-              <span class="text-xs font-bold">AI Format</span>
-            {/if}
-          </button>
-        </Tooltip>
-      </div>
-    {/if}
-  </div>
-
-  <div class="-ml-8">
-    {#if $tocItems.length > 0}
-      <section
-        use:dndzone={{
-          items: $tocItems,
-          flipDurationMs,
-          dragDisabled: $dragDisabled,
-          dropTargetStyle: {outline: '2px dashed #000', borderRadius: '8px'},
-        }}
-        on:consider={handleDndConsider}
-        on:finalize={handleDndFinalize}
-        class="min-h-[20px]"
-      >
-        {#each $tocItems as item, i (item.id)}
-          <div animate:flip={{duration: flipDurationMs}}>
-            <TocItem
-              {item}
-              showTooltip={item.id === firstItemWithChildrenId}
-              onUpdate={updateTocItem}
-              onDelete={deleteTocItem}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-              {currentPage}
-              {isPreview}
-              {pageOffset}
-              {insertAtPage}
-              {tocPageCount}
-              on:hoveritem
-              on:jumpToPage={(e) => {
-                dispatch('jumpToPage', e.detail);
-              }}
-              index={i + 1}
-            />
-          </div>
-        {/each}
-      </section>
-    {/if}
-
-    <div class="flex items-center gap-2 ml-9 mt-3 mb-4">
-      <button
-        on:click={addTocItem}
-        class="btn font-bold bg-yellow-400 text-black border-2 border-black rounded-lg px-4 py-2 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
-      >
-        {$t('btn.add_section')}
-      </button>
-      <button
-        on:click={() => addMultipleTocItems(5)}
-        class="btn font-bold bg-gray-100 text-black border-2 border-black rounded-lg px-3 py-2 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-sm"
-      >
-        +5
-      </button>
-      <button
-        on:click={() => addMultipleTocItems(10)}
-        class="btn font-bold bg-gray-100 text-black border-2 border-black rounded-lg px-3 py-2 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-sm"
-      >
-        +10
-      </button>
+            <button
+              on:click={handleAiFormat}
+              disabled={isProcessing || !text.trim()}
+              class="flex items-center gap-1.5 bg-gradient-to-br from-blue-300 to-pink-600 text-white px-3 py-1.5 rounded-md shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
+            >
+              {#if isProcessing}
+                <Loader2
+                  size={16}
+                  class="animate-spin"
+                />
+                <span class="text-xs font-bold">{$t('editor.processing')}</span>
+              {:else}
+                <Sparkles size={16} />
+                <span class="text-xs font-bold">{$t('editor.ai_format')}</span>
+              {/if}
+            </button>
+          </Tooltip>
+        </div>
+      {/if}
     </div>
-  </div>
+  {:else}
+    <div class="-ml-8">
+      {#if $tocItems.length > 0}
+        <section
+          use:dndzone={{
+            items: $tocItems,
+            flipDurationMs,
+            dragDisabled: $dragDisabled,
+            dropTargetStyle: {outline: '2px dashed #000', borderRadius: '8px'},
+          }}
+          on:consider={handleDndConsider}
+          on:finalize={handleDndFinalize}
+          class="min-h-[20px]"
+        >
+          {#each $tocItems as item, i (item.id)}
+            <div animate:flip={{duration: flipDurationMs}}>
+              <TocItem
+                {item}
+                showTooltip={item.id === firstItemWithChildrenId}
+                onUpdate={updateTocItem}
+                onDelete={deleteTocItem}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                {currentPage}
+                {isPreview}
+                {pageOffset}
+                {insertAtPage}
+                {tocPageCount}
+                on:hoveritem
+                on:jumpToPage={(e) => {
+                  dispatch('jumpToPage', e.detail);
+                }}
+                index={i + 1}
+              />
+            </div>
+          {/each}
+        </section>
+      {/if}
+
+      <div class="flex items-center gap-2 ml-9 mt-3 mb-4">
+        <button
+          on:click={addTocItem}
+          class="btn font-bold bg-yellow-400 text-black border-2 border-black rounded-lg px-4 py-2 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[4px] hover:translate-y-[4px] transition-all"
+        >
+          {$t('btn.add_section')}
+        </button>
+        <button
+          on:click={() => addMultipleTocItems(5)}
+          class="btn font-bold bg-gray-100 text-black border-2 border-black rounded-lg px-3 py-2 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-sm"
+        >
+          +5
+        </button>
+        <button
+          on:click={() => addMultipleTocItems(10)}
+          class="btn font-bold bg-gray-100 text-black border-2 border-black rounded-lg px-3 py-2 shadow-[2px_2px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all text-sm"
+        >
+          +10
+        </button>
+      </div>
+    </div>
+  {/if}
 </div>
