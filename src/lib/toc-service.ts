@@ -77,7 +77,13 @@ export async function generateToc(
   });
 
   if (!response.ok) {
-    const err = await response.json();
+    const raw = await response.text();
+    let err: any = {};
+    try {
+      err = JSON.parse(raw);
+    } catch {
+      err = {message: raw || 'AI processing failed.'};
+    }
     let friendlyMessage = err.message || 'AI processing failed.';
 
     if (response.status >= 500 && response.status < 600) {
@@ -99,5 +105,10 @@ export async function generateToc(
     throw new Error(friendlyMessage);
   }
 
-  return await response.json();
+  const raw = await response.text();
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error(`Invalid JSON response from /api/process-toc: ${ raw.slice(0, 120) }`);
+  }
 }

@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { withRateLimit } from '$lib/server/ratelimit';
+import { retryWithTimeout, toJsonError } from '$lib/server/http-utils';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { error, json } from '@sveltejs/kit';
 import { jsonrepair } from 'jsonrepair';
@@ -109,13 +110,17 @@ function determineProvider(request: Request, userProvider?: string): string {
 
 export const POST = withRateLimit(async ({ request }) => {
   const origin = request.headers.get('origin');
-  const allowedOrigins = [
-    'https://tocify.aeriszhu.com', 'https://tocify.vercel.app',
-    'http://localhost:5173', 'http://127.0.0.1:5173'
-  ];
+  const allowedOrigins = Array.from(new Set([
+    'https://tocify.aeriszhu.com',
+    'https://tocify.vercel.app',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    ...(env.VERCEL_URL ? [`https://${ env.VERCEL_URL }`] : []),
+    ...(env.OCR_ALLOWED_ORIGINS ? env.OCR_ALLOWED_ORIGINS.split(',').map((v) => v.trim()).filter(Boolean) : []),
+  ]));
 
   if (origin && !allowedOrigins.includes(origin)) {
-    return new Response('Forbidden', { status: 403 });
+    return toJsonError(403, 'Forbidden', 'FORBIDDEN_ORIGIN');
   }
 
 
@@ -156,16 +161,27 @@ export const POST = withRateLimit(async ({ request }) => {
     let jsonText = '';
 
     if (currentProvider === 'qwen') {
-      jsonText =
-        await processWithQwen(isTextMode ? text : images, apiKey, isTextMode);
+      jsonText = await retryWithTimeout(
+        () => processWithQwen(isTextMode ? text : images, apiKey, isTextMode),
+        { timeoutMs: 45000, maxRetries: 1 });
     } else if (currentProvider === 'zhipu') {
-      jsonText = await processWithZhipu(
-        isTextMode ? text : images, apiKey, isTextMode);
-      jsonText = await processWithDoubao(
-        isTextMode ? text : images, apiKey, isTextMode, doubaoEndpointIdText, doubaoEndpointIdVision);
+      jsonText = await retryWithTimeout(
+        () => processWithZhipu(isTextMode ? text : images, apiKey, isTextMode),
+        { timeoutMs: 45000, maxRetries: 1 });
+    } else if (currentProvider === 'doubao') {
+      jsonText = await retryWithTimeout(
+        () => processWithDoubao(
+          isTextMode ? text : images,
+          apiKey,
+          isTextMode,
+          doubaoEndpointIdText,
+          doubaoEndpointIdVision
+        ),
+        { timeoutMs: 45000, maxRetries: 1 });
     } else {
-      jsonText = await processWithGemini(
-        isTextMode ? text : images, apiKey, isTextMode);
+      jsonText = await retryWithTimeout(
+        () => processWithGemini(isTextMode ? text : images, apiKey, isTextMode),
+        { timeoutMs: 45000, maxRetries: 1 });
     }
 
     let rawString = jsonText.replace(/```json\n?|```/g, '').trim();
@@ -197,10 +213,11 @@ export const POST = withRateLimit(async ({ request }) => {
 
   } catch (err: any) {
     console.error('API Error:', err);
-    throw error(
+    return toJsonError(
       err.status || 500,
-      err.message || err.body.message ||
-      'Failed to process ToC, please contact support.');
+      err.message || err.body?.message || 'Failed to process ToC, please contact support.',
+      'PROCESS_TOC_FAILED'
+    );
   }
 });
 
