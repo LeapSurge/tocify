@@ -4,6 +4,7 @@ import fontkit from 'pdf-fontkit';
 import * as pdfjsLib from 'pdfjs-dist';
 import { type TocConfig } from '../stores';
 import { A4_WIDTH, BASE_FONT_SIZE_L1, BASE_FONT_SIZE_OTHER } from './constants';
+import { LruRenderCache } from './pdf/render-cache';
 
 export interface TocItem {
   id: string;
@@ -81,6 +82,7 @@ export class PDFService {
   private worker: Worker | null = null;
   private workerCallbacks: Map<string, { resolve: Function, reject: Function }> = new Map();
   private workerLoadedFonts: Set<string> = new Set();
+  private imageCache = new LruRenderCache<string>(20);
 
   constructor () {
     if (browser && !PDFService.sharedWorker) {
@@ -183,6 +185,7 @@ export class PDFService {
 
   async initPreview(sourceDoc: PDFDocument) {
     if (!this.worker) return;
+    this.imageCache.clear();
     const bytes = await sourceDoc.save();
     await this.postWorkerMessage('INIT', { pdfBytes: bytes });
     await this.loadFonts('huiwen');
@@ -298,6 +301,12 @@ export class PDFService {
   async getPageAsImage(
     pdf: any, pageNum: number, targetScale: number = 1.5,
     maxDimension: number = 2048): Promise<string> {
+    const cacheKey = `${pageNum}_${targetScale}_${maxDimension}`;
+    const cached = this.imageCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const page = await pdf.getPage(pageNum);
 
     let viewport = page.getViewport({ scale: targetScale });
@@ -326,7 +335,9 @@ export class PDFService {
 
     await renderTask.promise.then(() => page.cleanup()).catch(() => page.cleanup());
 
-    return canvas.toDataURL('image/jpeg', 0.9);
+    const encoded = canvas.toDataURL('image/jpeg', 0.9);
+    this.imageCache.set(cacheKey, encoded);
+    return encoded;
   }
 
   /**
@@ -342,5 +353,17 @@ export class PDFService {
       console.warn('Worker detection failed, returning empty:', e);
       return [];
     }
+  }
+
+  destroy() {
+    this.imageCache.clear();
+
+    if (this.worker) {
+      this.worker.terminate();
+      this.worker = null;
+    }
+
+    this.workerCallbacks.clear();
+    this.workerLoadedFonts.clear();
   }
 }

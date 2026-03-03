@@ -13,6 +13,8 @@
   import {setOutline} from '../lib/pdf-outliner';
   import {debounce} from '../lib';
   import {buildTree, convertPdfJsOutlineToTocItems, setNestedValue, findActiveTocPath} from '$lib/utils';
+  import {getHintVisibility, readDraft, shouldShowGraphEntrance, writeFingerprint} from '$lib/page/local-persistence';
+  import {buildTocAfterOffset} from '$lib/page/toc-offset';
   import {generateToc} from '$lib/toc-service';
   import {applyCustomPrefix, DEFAULT_PREFIX_CONFIG, type LevelConfig} from '$lib/prefix-service';
   import { setPageLabels } from '$lib/page-labels';
@@ -113,19 +115,12 @@
   });
 
   onMount(() => {
-    const hideUntil = localStorage.getItem('tocify_hide_graph_entrance_until');
-    if (hideUntil) {
-      const expiry = parseInt(hideUntil, 10);
-      if (Date.now() < expiry) {
-        isGraphEntranceVisible = false;
-      } else {
-        localStorage.removeItem('tocify_hide_graph_entrance_until');
-      }
-    }
+    isGraphEntranceVisible = shouldShowGraphEntrance(localStorage, Date.now());
   });
 
   onDestroy(async () => {
     unsubscribeTocItems();
+    $pdfService?.destroy();
     if (originalPdfInstance) {
       try {
         await originalPdfInstance.destroy();
@@ -444,7 +439,7 @@
     const fingerprint = `${file.name}_${file.size}`;
 
     curFileFingerprint.set(fingerprint);
-    localStorage.setItem('tocify_last_fingerprint', fingerprint);
+    writeFingerprint(localStorage, fingerprint);
 
     isFileLoading = true;
     autoSaveEnabled.set(false);
@@ -529,10 +524,9 @@
       tocRanges = [{start: 1, end: 1, id: 'default'}];
       activeRangeIndex = 0;
 
-      const session = localStorage.getItem(`toc_draft_${fingerprint}`);
-
+      const session = readDraft(localStorage, fingerprint);
       if (session) {
-        const {items, pageOffset} = JSON.parse(session);
+        const {items, pageOffset} = session;
         tocItems.set(items);
         updateTocField('pageOffset', pageOffset);
       } else {
@@ -576,12 +570,7 @@
       await tick();
       isFileLoading = false;
       
-      const hideHintUntil = localStorage.getItem('tocify_hide_next_step_hint_until');
-      if (hideHintUntil && Date.now() < parseInt(hideHintUntil, 10)) {
-        showNextStepHint = false;
-      } else {
-        showNextStepHint = true;
-      }
+      showNextStepHint = getHintVisibility(localStorage, Date.now());
       
       autoSaveEnabled.set(true);
     }
@@ -700,26 +689,8 @@
     const offset = physicalPage - labeledPage;
     updateTocField('pageOffset', offset);
 
-    const hasChinese = pendingTocItems.some((item) => /[\u4e00-\u9fa5]/.test(item.title));
-    const rootTitle = hasChinese ? '目录' : 'Contents';
-    const firstTitleNormalized = pendingTocItems[0]?.title?.trim().toLowerCase();
-    const isDuplicate =
-      firstTitleNormalized === '目录' ||
-      firstTitleNormalized === 'contents' ||
-      firstTitleNormalized === 'table of contents';
-
-    if (!isDuplicate) {
-      const rootNode: TocItem = {
-        id: `root-${Date.now()}`,
-        title: rootTitle,
-        to: (tocRanges[0]?.start || 1) - offset,
-        children: [],
-        open: true,
-      };
-      pendingTocItems.unshift(rootNode);
-    }
-
-    tocItems.set(pendingTocItems);
+    const nextItems = buildTocAfterOffset(pendingTocItems, tocRanges[0]?.start || 1, offset);
+    tocItems.set(nextItems);
     showOffsetModal = false;
     pendingTocItems = [];
     firstTocItem = null;
