@@ -1,8 +1,9 @@
 <script lang="ts">
   import {fade} from 'svelte/transition';
   import {t} from 'svelte-i18n';
-  import {createEventDispatcher} from 'svelte';
-  import Dropzone from 'svelte-file-dropzone';
+import {createEventDispatcher} from 'svelte';
+import Dropzone from 'svelte-file-dropzone';
+import {Upload} from 'lucide-svelte';
 
   import DropzoneView from '../DropzoneView.svelte';
   import PDFViewer from '../PDFViewer.svelte';
@@ -16,6 +17,7 @@
 
   export let isPreviewMode = false;
   export let isPreviewLoading = false;
+  export let stage: 1 | 2 | 3 = 1;
 
   export let tocRanges: {start: number; end: number; id: string}[];
   export let activeRangeIndex: number;
@@ -23,9 +25,14 @@
   export let currentTocPath: any[] = []; // Type should be TocItem[]
 
   export let jumpToTocPage: () => Promise<void>;
+  export let showPreviewToggle = true;
+  export let showExportButton = false;
 
   const dispatch = createEventDispatcher();
   let fileInputRef: HTMLInputElement;
+
+  $: viewerMode = (stage === 1 ? 'grid' : 'single') as 'grid' | 'single';
+  $: viewerInstance = stage === 1 ? originalPdfInstance : (previewPdfInstance || originalPdfInstance);
 
   function handleFileInputChange(e: Event) {
     const target = e.target as HTMLInputElement;
@@ -80,37 +87,19 @@
 
     {#if pdfState.instance}
       <div class="relative z-10 h-full flex flex-col">
-        <div class="contents" class:hidden={isPreviewMode}>
-          <PDFViewer
-            bind:pdfState
-            mode="grid"
-            instance={originalPdfInstance}
-            {tocRanges}
-            {activeRangeIndex}
-            on:updateActiveRange
-            on:fileloaded={forwardFileLoadedEvent}
-            {jumpToTocPage}
-            {addPhysicalTocPage}
-            {currentTocPath}
-            hasPreview={!!previewPdfInstance}
-          />
-        </div>
-
-        <div class="contents" class:hidden={!isPreviewMode}>
-          <PDFViewer
-            bind:pdfState
-            mode="single"
-            instance={previewPdfInstance || originalPdfInstance}
-            {tocRanges}
-            {activeRangeIndex}
-            on:updateActiveRange
-            on:fileloaded={forwardFileLoadedEvent}
-            {jumpToTocPage}
-            {addPhysicalTocPage}
-            {currentTocPath}
-            hasPreview={!!previewPdfInstance}
-          />
-        </div>
+        <PDFViewer
+          bind:pdfState
+          mode={viewerMode}
+          instance={viewerInstance}
+          {tocRanges}
+          {activeRangeIndex}
+          on:updateActiveRange
+          on:fileloaded={forwardFileLoadedEvent}
+          {jumpToTocPage}
+          {addPhysicalTocPage}
+          {currentTocPath}
+          hasPreview={!!previewPdfInstance}
+        />
 
         <input
           type="file"
@@ -125,6 +114,9 @@
           {isPreviewMode}
           {originalPdfInstance}
           doc={pdfState.doc}
+          showUploadButton={false}
+          {showPreviewToggle}
+          {showExportButton}
           on:triggerUpload={() => fileInputRef?.click()}
           on:togglePreview={() => dispatch('togglePreview')}
           on:export={() => dispatch('export')}
@@ -132,4 +124,13 @@
       </div>
     {/if}
   </div>
+
+  <button
+    class="fixed right-5 bottom-5 z-50 flex items-center gap-2 font-bold bg-white text-black border-2 border-black rounded-xl px-4 py-2 shadow-[4px_4px_0px_rgba(0,0,0,1)] hover:shadow-none hover:translate-x-[2px] hover:translate-y-[2px] transition-all"
+    on:click={() => fileInputRef?.click()}
+    title={$t('tooltip.upload_new')}
+  >
+    <Upload size={16} />
+    {$t('btn.upload_new')}
+  </button>
 </div>

@@ -13,10 +13,10 @@
   import {setOutline} from '../lib/pdf-outliner';
   import {debounce} from '../lib';
   import {buildTree, convertPdfJsOutlineToTocItems, setNestedValue, findActiveTocPath} from '$lib/utils';
-  import {getHintVisibility, readDraft, shouldShowGraphEntrance, writeFingerprint} from '$lib/page/local-persistence';
+  import {readDraft, shouldShowGraphEntrance, writeFingerprint} from '$lib/page/local-persistence';
   import {buildTocAfterOffset} from '$lib/page/toc-offset';
   import {generateToc} from '$lib/toc-service';
-  import {applyCustomPrefix, DEFAULT_PREFIX_CONFIG, type LevelConfig} from '$lib/prefix-service';
+  import {applyCustomPrefix} from '$lib/prefix-service';
   import { setPageLabels } from '$lib/page-labels';
 
   import Toast from '../components/Toast.svelte';
@@ -45,7 +45,6 @@
   let isAiLoading = false;
   let isPreviewLoading = false;
   let isTocConfigExpanded = false;
-  let showNextStepHint = false;
   let hasShownTocHint = false;
 
   let showGraphDrawer = false;
@@ -101,6 +100,9 @@
     doubaoEndpointIdText: '',
     doubaoEndpointIdVision: '',
   };
+  let apiConfigDirty = false;
+  let stage: 1 | 2 | 3 = 1;
+  let hasWorkflowChanges = false;
 
   onMount(async () => {
     init('A-US-0422911470');
@@ -224,8 +226,9 @@
   };
 
   const unsubscribeTocItems = tocItems.subscribe((items) => {
-    if (items.length > 0) showNextStepHint = false;
     if (isFileLoading) return;
+
+    if (originalPdfInstance) hasWorkflowChanges = true;
 
     if (!isPreviewMode) return;
 
@@ -262,6 +265,7 @@
     tocConfig.update((cfg) => {
       return setNestedValue(cfg, fieldPath, value);
     });
+    if (originalPdfInstance) hasWorkflowChanges = true;
   }
 
   const updateViewerInstance = () => {
@@ -443,9 +447,9 @@
 
     isFileLoading = true;
     autoSaveEnabled.set(false);
-    showNextStepHint = false;
     hasShownTocHint = false;
     showOffsetModal = false;
+    stage = 1;
     cleanupOffsetRenderTask();
     
     pendingTocItems = [];
@@ -520,6 +524,7 @@
       previewPdfInstance = originalPdfInstance;
       isPreviewMode = false;
       tocPageCount = 0;
+      hasWorkflowChanges = false;
       pdfState.currentPage = 1;
       tocRanges = [{start: 1, end: 1, id: 'default'}];
       activeRangeIndex = 0;
@@ -569,9 +574,6 @@
       updateViewerInstance();
       await tick();
       isFileLoading = false;
-      
-      showNextStepHint = getHintVisibility(localStorage, Date.now());
-      
       autoSaveEnabled.set(true);
     }
   };
@@ -624,6 +626,7 @@
         setTimeout(() => URL.revokeObjectURL(url), 1000);
       }
       toastProps = {show: true, message: 'Export Successful!', type: 'success'};
+      hasWorkflowChanges = false;
 
       setTimeout(() => {
         const isDismissed = localStorage.getItem('tocify_hide_star_request') === 'true';
@@ -637,12 +640,10 @@
     }
   };
 
-  const generateTocFromAI = async () => {
-    showNextStepHint = false;
-
+  const generateTocFromAI = async (): Promise<boolean> => {
     if (!originalPdfInstance) {
       toastProps = {show: true, message: 'Please load a PDF first.', type: 'error'};
-      return;
+      return false;
     }
 
     isAiLoading = true;
@@ -654,11 +655,13 @@
         ranges: tocRanges,
         apiKey: customApiConfig.apiKey,
         provider: customApiConfig.provider,
+        doubaoEndpointIdText: customApiConfig.doubaoEndpointIdText,
+        doubaoEndpointIdVision: customApiConfig.doubaoEndpointIdVision,
       });
 
       if (!res || res.length === 0) {
         aiError = 'We could not find a valid ToC on these pages.';
-        return;
+        return false;
       }
 
       const nestedTocItems = buildTree(res);
@@ -672,11 +675,14 @@
       } else {
         tocItems.set(nestedTocItems);
         pendingTocItems = [];
+        stage = 2;
       }
+      return true;
     } catch (error: any) {
       console.error('Error generating ToC from AI:', error);
       aiError = error.message;
       toastProps = {show: true, message: error.message, type: 'error'};
+      return false;
     } finally {
       isAiLoading = false;
     }
@@ -694,6 +700,7 @@
     showOffsetModal = false;
     pendingTocItems = [];
     firstTocItem = null;
+    stage = 2;
 
     if (!isPreviewMode) {
       await togglePreviewMode();
@@ -794,28 +801,70 @@
     customApiConfig = e.detail;
   }
 
+  function handleApiConfigDirtyChange(e: CustomEvent<boolean>) {
+    apiConfigDirty = !!e.detail;
+  }
+
   function handleApiConfigSave() {
     toastProps = {show: true, message: 'API Settings Saved!', type: 'success'};
   }
 
-  const handleCloseNextStepHint = () => {
-    showNextStepHint = false;
-    const expiry = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
-    localStorage.setItem('tocify_hide_next_step_hint_until', expiry.toString());
+  const goToStageOne = async () => {
+    if (stage !== 1 && hasWorkflowChanges && !window.confirm(get(t)('wizard.leave_confirm'))) return;
+    stage = 1;
+    if (isPreviewMode) {
+      isPreviewMode = false;
+      updateViewerInstance();
+    }
+  };
+
+  const goToStageTwo = async () => {
+    if (stage === 3 && hasWorkflowChanges && !window.confirm(get(t)('wizard.leave_confirm'))) return;
+    if ($tocItems.length === 0) {
+      toastProps = {show: true, message: get(t)('wizard.toast_toc_empty'), type: 'error'};
+      return;
+    }
+    stage = 2;
+    if (!isPreviewMode) {
+      await togglePreviewMode();
+    }
+  };
+
+  const goToStageThree = async () => {
+    if ($tocItems.length === 0) {
+      toastProps = {show: true, message: get(t)('wizard.toast_toc_empty'), type: 'error'};
+      return;
+    }
+    stage = 3;
+    if (!isPreviewMode) {
+      await togglePreviewMode();
+    }
+  };
+
+  const startStageTwo = async () => {
+    if (!originalPdfInstance) {
+      toastProps = {show: true, message: get(t)('wizard.toast_upload_first'), type: 'error'};
+      return;
+    }
+
+    if (apiConfigDirty) {
+      const confirmed = window.confirm(get(t)('wizard.api_dirty_confirm'));
+      if (!confirmed) return;
+    }
+
+    if ($tocItems.length > 0) {
+      await goToStageTwo();
+      return;
+    }
+
+    const ok = await generateTocFromAI();
+    if (ok && !showOffsetModal) {
+      await goToStageTwo();
+    }
   };
 
   const handleViewerMessage = (event: CustomEvent<{message: string; type: 'success' | 'error' | 'info'}>) => {
     toastProps = {show: true, message: event.detail.message, type: event.detail.type};
-  };
-
-  let prefixConfigs = DEFAULT_PREFIX_CONFIG;
-  let prefixEnabled = false;
-
-  const handlePrefixChange = (e: CustomEvent) => {
-    if (e.detail.configs) prefixConfigs = e.detail.configs;
-    if (e.detail.enabled !== undefined) prefixEnabled = e.detail.enabled;
-
-    if (isPreviewMode) debouncedUpdatePDF();
   };
 
   onMount(() => {
@@ -922,29 +971,35 @@
         class="contents"
       >
         <SidebarPanel
+          {stage}
           {pdfState}
           {originalPdfInstance}
           {previewPdfInstance}
           {isAiLoading}
           {aiError}
-          {showNextStepHint}
           {config}
           {customApiConfig}
           {tocPageCount}
           {isPreviewMode}
+          hasToc={$tocItems.length > 0}
+          stageOneDone={!!originalPdfInstance}
+          stageTwoDone={$tocItems.length > 0}
+          {apiConfigDirty}
           bind:tocRanges
           bind:activeRangeIndex
           bind:addPhysicalTocPage
           bind:isTocConfigExpanded
-          on:prefixChange={handlePrefixChange}
           on:openhelp={() => (showHelpModal = true)}
-          on:closeNextStepHint={handleCloseNextStepHint}
           on:apiConfigChange={handleApiConfigChange}
+          on:apiConfigDirtyChange={handleApiConfigDirtyChange}
           on:apiConfigSave={handleApiConfigSave}
+          on:startStageTwo={startStageTwo}
+          on:goStageOne={goToStageOne}
+          on:goStageTwo={goToStageTwo}
+          on:goStageThree={goToStageThree}
           on:updateField={(e) => updateTocField(e.detail.path, e.detail.value)}
           on:jumpToTocPage={jumpToTocPage}
           on:jumpToPage={(e) => { jumpToPage(e.detail.to); }}
-          on:generateAi={generateTocFromAI}
           on:hoveritem={handleTocItemHover}
           on:fileselect={(e) => loadPdfFile(e.detail)}
           on:viewerMessage={handleViewerMessage}
@@ -964,6 +1019,7 @@
         class="contents"
       >
         <PreviewPanel
+          {stage}
           {isFileLoading}
           bind:pdfState
           {originalPdfInstance}
@@ -975,6 +1031,8 @@
           {addPhysicalTocPage}
           {jumpToTocPage}
           {currentTocPath}
+          showPreviewToggle={false}
+          showExportButton={false}
           bind:isDragging
           on:fileselect={(e) => loadPdfFile(e.detail)}
           on:viewerMessage={handleViewerMessage}
